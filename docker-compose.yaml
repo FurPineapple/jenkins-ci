@@ -1,0 +1,69 @@
+services:
+  jenkins:
+    container_name: ci-server
+    # build:
+    #   dockerfile: ./alpine/Dockerfile
+    #   context: ./alpine
+    image: jenkins/jenkins:2.479.3-lts-alpine
+    networks:
+      - ci-backend
+    ports:
+      - name: ci-web
+        target: 8080
+        host_ip: 127.0.0.1
+        published: "8080"
+        protocol: tcp
+        app_protocol: http
+        mode: ingress
+      - name: ci-agent
+        target: 50000
+        host_ip: 127.0.0.1
+        published: "50000"
+        protocol: tcp
+        app_protocol: java
+        mode: ingress
+    volumes:
+      # - ci-certs:/certs/client:ro
+      - ci-data:/var/jenkins_home:rw
+      - type: bind
+        source: ./
+        target: /local-repository/
+        read_only: true
+  
+  jenkins-agent:
+    container_name: ci-agent
+    environment:
+      - JENKINS_URL=http://ci-server:8080
+      - JENKINS_AGENT_NAME=ci-agent
+      - JENKINS_AGENT_WORKDIR=/home/jenkins
+    entrypoint: ["/bin/bash", "-c", "/agent-entrypoint.sh"]
+    configs:
+      - source: agent-entry
+        target: /agent-entrypoint.sh
+        uid: "1000"
+        gid: "1000"
+        mode: 0777
+    image: jenkins/inbound-agent:latest-alpine3.21-jdk17
+    networks:
+      - ci-backend
+    secrets:
+      - agent-secret
+    volumes:
+      - ci-agent-data:/home/jenkins:rw
+networks:
+  ci-backend:
+    driver: bridge
+    name: ci-backend
+configs:
+  agent-entry:
+    file: ./alpine/jenkins-agent/agent-entrypoint.sh
+secrets:
+  agent-secret:
+    file: ./alpine/jenkins-agent/.agent-secret
+volumes:
+  ci-certs:
+    name: ci-certs
+  ci-data:
+    name: ci-data
+  ci-agent-data:
+    name: ci-agent-data
