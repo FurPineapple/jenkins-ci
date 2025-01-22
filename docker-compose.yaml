@@ -29,16 +29,16 @@ services:
         source: ./
         target: /local-repository/
         read_only: true
-  
-  jenkins-agent:
-    container_name: ci-agent
+
+  jenkins-inbound-agent:
+    container_name: ci-agent-http
+    entrypoint: ["/bin/bash", "-c", "/agent-entrypoint.sh"]
     environment:
       - JENKINS_URL=http://ci-server:8080
       - JENKINS_AGENT_NAME=ci-agent
       - JENKINS_AGENT_WORKDIR=/home/jenkins
-    entrypoint: ["/bin/bash", "-c", "/agent-entrypoint.sh"]
     configs:
-      - source: agent-entry
+      - source: agent-http-entrypoint
         target: /agent-entrypoint.sh
         uid: "1000"
         gid: "1000"
@@ -47,23 +47,64 @@ services:
     networks:
       - ci-backend
     secrets:
-      - agent-secret
+      - agent-http-secret
     volumes:
-      - ci-agent-data:/home/jenkins:rw
+      - ci-agent-http-data:/home/jenkins/agent:rw
+
+  jenkins-ssh-agent:
+    configs:
+      - source: agent-ssh-entrypoint
+        target: /agent-entrypoint.sh
+        uid: "1000"
+        gid: "1000"
+        mode: 0777
+    container_name: ci-agent-ssh
+    entrypoint: ["/bin/bash", "-c", "/agent-entrypoint.sh"]
+    # environment:
+    #   - JENKINS_AGENT_SSH_PUBKEY= DEFINED USING ENTRYPOINT
+
+    image: jenkins/ssh-agent:latest-alpine3.21-jdk17
+    networks:
+      - ci-backend
+    ports:
+      - name: ci-ssh
+        target: 22
+        host_ip: 127.0.0.1
+        published: "22"
+        protocol: tcp
+        app_protocol: ssh
+        mode: ingress
+    secrets:
+      - agent-ssh-secret
+      - agent-ssh-key
+    volumes:
+      - ci-agent-ssh-data:/home/jenkins/agent:rw
+
 networks:
   ci-backend:
     driver: bridge
     name: ci-backend
+
 configs:
-  agent-entry:
-    file: ./alpine/jenkins-agent/agent-entrypoint.sh
+  agent-http-entrypoint:
+    file: ./alpine/jenkins-agent-http/agent-entrypoint.sh
+  agent-ssh-entrypoint:
+    file: ./alpine/jenkins-agent-ssh/agent-entrypoint.sh
+
 secrets:
-  agent-secret:
-    file: ./alpine/jenkins-agent/.agent-secret
+  agent-http-secret:
+    file: ./alpine/jenkins-agent-http/.agent-secret
+  agent-ssh-secret:
+    file: ./alpine/jenkins-agent-ssh/.agent-secret
+  agent-ssh-key:
+    file: ./alpine/jenkins-agent-ssh/.private-key
+
 volumes:
   ci-certs:
     name: ci-certs
   ci-data:
     name: ci-data
-  ci-agent-data:
-    name: ci-agent-data
+  ci-agent-http-data:
+    name: ci-agent-http-data
+  ci-agent-ssh-data:
+    name: ci-agent-ssh-data
